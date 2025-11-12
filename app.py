@@ -45,6 +45,7 @@ def process_text(full_text):
 
         # 4. TRÍCH XUẤT (Extract) khối Tiếng Anh
         if english_text_full:
+            # [TRÍCH XUẤT] Tìm 'Source:' và lấy mọi thứ SAU nó
             en_match = re.search(r'(Source:[\s\S]*)', english_text_full, re.IGNORECASE)
             if en_match:
                 # Tìm thấy 'Source:', lấy toàn bộ
@@ -62,7 +63,7 @@ def process_text(full_text):
 
         # 5. TRÍCH XUẤT (Extract) khối Tiếng Việt
         if vietnamese_text_full:
-            # Đã có 'Hướng dẫn' (từ bước 3), lấy toàn bộ
+            # [TRÍCH XUẤT] Đã có 'Hướng dẫn' (từ bước 3), lấy toàn bộ
             extracted_vietnamese = vietnamese_text_full.strip()
             
             # [VALIDATE] Kiểm tra 'Kết quả'
@@ -74,8 +75,13 @@ def process_text(full_text):
 
         
         # 6. Dọn dẹp thẻ ``` ở cuối (nếu có)
+        # (Văn bản của bạn có thẻ ``` ở đầu và cuối khối code)
         extracted_english = re.sub(r'\n```\n?$', '', extracted_english).strip()
+        extracted_english = re.sub(r'^```\n?', '', extracted_english).strip()
+        
         extracted_vietnamese = re.sub(r'\n```\n?$', '', extracted_vietnamese).strip()
+        extracted_vietnamese = re.sub(r'^```\n?', '', extracted_vietnamese).strip()
+
 
         # 7. Chỉ thêm vào output nếu có gì đó
         if extracted_english or extracted_vietnamese:
