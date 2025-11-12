@@ -6,16 +6,17 @@ import io
 def process_text(full_text):
     """
     Xử lý văn bản thô, trích xuất các cặp task Tiếng Anh và Hướng dẫn Tiếng Việt.
-    Logic này được cập nhật để TRÍCH XUẤT (extract) thay vì DỌN DẸP (clean).
-    - Cột 1: Bắt đầu từ 'Source:'
-    - Cột 2: Bắt đầu từ 'Hướng dẫn'
+    LOGIC MỚI (Validate):
+    - Tách Anh/Việt bằng 'Hướng dẫn'.
+    - Khối T.Anh PHẢI chứa 'Source:' VÀ 'deliverable(s)'.
+    - Khối T.Việt PHẢI chứa 'Kết quả'.
+    - Lấy TOÀN BỘ khối nếu hợp lệ.
     """
     if not full_text:
         return None, "Lỗi: Văn bản đầu vào trống."
 
     # 1. Tách các BLOCKS BIẾN THỂ bằng "-----"
     variation_blocks = re.split(r'\n*-----\n*', full_text)
-    
     output_data = []
 
     # 2. Lặp qua TỪNG block
@@ -24,45 +25,67 @@ def process_text(full_text):
         if not block:
             continue
 
-        # 3. Tách Tiếng Anh và Tiếng Việt bằng "---"
-        parts = re.split(r'\n---\n', block, maxsplit=1)
+        # 3. Tách Anh/Việt bằng "Hướng dẫn"
+        parts = re.split(r'\n*(H[ưƯ]ớng dẫn[\s\S]*)', block, maxsplit=1, flags=re.IGNORECASE)
         
-        if len(parts) == 2:
-            english_text_full = parts[0]
-            vietnamese_text_full = parts[1]
+        english_text_full = ""
+        vietnamese_text_full = ""
+        
+        if len(parts) > 1:
+            # Tìm thấy "Hướng dẫn".
+            english_text_full = parts[0].strip()
+            vietnamese_text_full = parts[1].strip() # Bắt đầu bằng "Hướng dẫn"
+        else:
+            # Không tìm thấy "Hướng dẫn". Toàn bộ block là Tiếng Anh.
+            english_text_full = parts[0].strip()
+            vietnamese_text_full = ""
 
-            # 4. TRÍCH XUẤT (Extract) khối Tiếng Anh
-            # Tìm 'Source:' (không phân biệt hoa thường) và lấy mọi thứ sau nó.
-            # Điều này tự động bỏ qua '### Biến thể...' và '```' ở đầu.
+        extracted_english = ""
+        extracted_vietnamese = ""
+
+        # 4. TRÍCH XUẤT (Extract) khối Tiếng Anh
+        if english_text_full:
             en_match = re.search(r'(Source:[\s\S]*)', english_text_full, re.IGNORECASE)
-            
             if en_match:
+                # Tìm thấy 'Source:', lấy toàn bộ
                 extracted_english = en_match.group(1).strip()
-                # Dọn dẹp thẻ ``` ở cuối nếu có
-                extracted_english = re.sub(r'\n```\n?$', '', extracted_english).strip()
+                
+                # [VALIDATE] Kiểm tra 'deliverable(s)'
+                # re.IGNORECASE không cần .lower()
+                if not re.search(r'deliverables?:', extracted_english, re.IGNORECASE):
+                    extracted_english = "ENGLISH_EXTRACT_FAIL (Không tìm thấy 'Deliverable:')"
             else:
                 extracted_english = "ENGLISH_EXTRACT_FAIL (Không tìm thấy 'Source:')"
+        else:
+            extracted_english = "ENGLISH_EXTRACT_FAIL (Trống)"
 
 
-            # 5. TRÍCH XUẤT (Extract) khối Tiếng Việt
-            # Tìm 'Hướng dẫn' (không phân biệt hoa thường) và lấy mọi thứ sau nó.
-            # Điều này tự động bỏ qua '```' ở đầu (nếu có).
-            vi_match = re.search(r'(H[ưƯ]ớng dẫn[\s\S]*)', vietnamese_text_full, re.IGNORECASE)
+        # 5. TRÍCH XUẤT (Extract) khối Tiếng Việt
+        if vietnamese_text_full:
+            # Đã có 'Hướng dẫn' (từ bước 3), lấy toàn bộ
+            extracted_vietnamese = vietnamese_text_full.strip()
             
-            if vi_match:
-                extracted_vietnamese = vi_match.group(1).strip()
-                # Dọn dẹp thẻ ``` ở cuối nếu có
-                extracted_vietnamese = re.sub(r'\n```\n?$', '', extracted_vietnamese).strip()
-            else:
-                extracted_vietnamese = "VIETNAMESE_EXTRACT_FAIL (Không tìm thấy 'Hướng dẫn')"
+            # [VALIDATE] Kiểm tra 'Kết quả'
+            if not re.search(r'Kết quả', extracted_vietnamese, re.IGNORECASE):
+                extracted_vietnamese = "VIETNAMESE_EXTRACT_FAIL (Không tìm thấy 'Kết quả')"
+        else:
+            # Không có 'Hướng dẫn'
+            extracted_vietnamese = "" # Rỗng (bình thường)
 
-            
-            output_data.append([extracted_english, extracted_vietnamese])
+        
+        # 6. Dọn dẹp thẻ ``` ở cuối (nếu có)
+        extracted_english = re.sub(r'\n```\n?$', '', extracted_english).strip()
+        extracted_vietnamese = re.sub(r'\n```\n?$', '', extracted_vietnamese).strip()
+
+        # 7. Chỉ thêm vào output nếu có gì đó
+        if extracted_english or extracted_vietnamese:
+             output_data.append([extracted_english, extracted_vietnamese])
 
     if not output_data:
-        return None, "Không tìm thấy task. Kiểm tra lại định dạng (----- và ---)."
+        # Lỗi này xảy ra nếu input hoàn toàn rỗng hoặc chỉ có '-----'
+        return None, "Không tìm thấy nội dung. Đảm bảo văn bản có chứa 'Source:' hoặc 'Hướng dẫn'."
 
-    # 6. Tạo DataFrame
+    # 8. Tạo DataFrame
     df = pd.DataFrame(output_data, columns=['English Task', 'Vietnamese Guide'])
     return df, f"Xử lý thành công. Tìm thấy {len(df)} cặp task."
 
@@ -86,7 +109,7 @@ def to_csv(df):
 # ----- Giao diện ứng dụng Streamlit -----
 
 st.set_page_config(layout="wide")
-st.title("Công cụ Tách Task (Phiên bản Trích xuất)")
+st.title("Công cụ Tách Task (Phiên bản Validate)")
 
 st.header("1. Dán nội dung (Paste Content)")
 full_text = st.text_area(
